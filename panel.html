@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none';">
+<title>MJ Hesari Flow</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<main>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="brand">
+    <img class="brand-mark" src="assets/brand.png" alt="MJ Hesari" width="36" height="36">
+    <div class="brand-text">
+      <span class="brand-word">MJ Hesari</span>
+      <span class="brand-sub">Full Stack Developer</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <h1 class="hero-title">ورود به <span class="hero-accent">Google Flow</span></h1>
+    <p class="hero-sub">ابزار شخصی برای رفع محدودیت دسترسی به گوگل فلو — ساخته‌شده توسط جواد حصاری.</p>
+  </section>
+
+  <section class="card control">
+    <div class="control-row">
+      <div class="control-label">
+        <span class="control-name">فعالسازی ابزار</span>
+        <span class="control-hint">پس از فعالسازی یک بار صفحه گوگل فلو را بازنشانی کنید</span>
+      </div>
+      <button id="toggle" class="switch" role="switch" aria-checked="false" aria-label="فعالسازی ابزار" disabled>
+        <span class="switch-thumb"></span>
+      </button>
+    </div>
+    <div id="status" class="status" role="status">
+      <span class="status-dot status-dot--idle"></span>
+      <span class="status-text">در حال بررسی…</span>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button id="open" class="btn btn-primary">بازکردن گوگل فلو</button>
+    <button id="reload" class="btn btn-ghost" hidden>بارگذاری دوباره گوگل فلو</button>
+  </div>
+
+  <p id="error" class="error" role="alert"></p>
+
+  <p class="note">حتماً از فیلترشکن با IP ثابت کشورهای غیرتحریمی استفاده کنید.</p>
+
+  <footer class="foot">
+    <img src="assets/brand.png" alt="MJ Hesari" width="32" height="32">
+    <nav class="links" aria-label="لینک‌های MJ Hesari">
+      <a href="https://www.mj-hesari.ir/" target="_blank" rel="noopener noreferrer">سایت</a>
+      <span class="separator">|</span>
+      <a href="https://www.mj-hesari.ir/#contact" target="_blank" rel="noopener noreferrer">تماس</a>
+      <span class="separator">|</span>
+      <a href="https://t.me/Mjhe3ari" target="_blank" rel="noopener noreferrer">تلگرام</a>
+      <span class="separator">|</span>
+      <a href="https://instagram.com/hesari.dev" target="_blank" rel="noopener noreferrer">اینستاگرام</a>
+      <span class="separator">|</span>
+      <a href="https://github.com/mjhesari" target="_blank" rel="noopener noreferrer">گیت‌هاب</a>
+    </nav>
+  </footer>
+</main>
+<script src="panel.js"></script>
+</body>
+</html>

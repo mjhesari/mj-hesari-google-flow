@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "MJ Hesari Google Flow",
+  "version": "1.3.0",
+  "minimum_chrome_version": "111",
+  "description": "ابزار شخصی جواد حصاری برای رفع محدودیت دسترسی به Google Flow — mj-hesari.ir",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://flow.google.com/*",
+    "https://flow.cfcnode.com/*"
+  ],
+  "background": {
+    "service_worker": "app.js"
+  },
+  "action": {
+    "default_title": "MJ Hesari Flow",
+    "default_popup": "panel.html",
+    "default_icon": {
+      "16": "assets/ficon-16.png",
+      "32": "assets/ficon-32.png",
+      "48": "assets/ficon-48.png",
+      "128": "assets/ficon-128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/ficon-16.png",
+    "32": "assets/ficon-32.png",
+    "48": "assets/ficon-48.png",
+    "128": "assets/ficon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "link.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "stat.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
