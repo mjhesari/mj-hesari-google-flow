@@ -8,6 +8,18 @@
 
 ---
 
+## این صفحه برای چیست؟
+
+اگر هنگام باز کردن [flow.google.com](https://flow.google.com/) با پیام زیر روبه‌رو شدید، همین افزونه برای رفع همان محدودیت ساخته شده است:
+
+> **Flow is not available in your country yet.**
+
+![صفحهٔ محدودیت جغرافیایی Google Flow — Flow is not available in your country yet](assets/errorpage.png)
+
+این همان صفحهٔ `/unavailable` (و مسیرهای مشابه مثل `/unsupported-country`) است. با فعال‌کردن افزونه + VPN با IP ثابت، می‌توانید از این صفحه عبور کنید و وارد Flow شوید.
+
+---
+
 ## پیش‌نیاز
 
 - مرورگر **Google Chrome** نسخهٔ ۱۱۱ یا بالاتر
@@ -87,7 +99,8 @@ mj-hesari-google-flow/
 ├── panel.html      # UI پنل
 ├── panel.css       # استایل برند MJ Hesari
 ├── panel.js        # منطق پنل
-├── assets/         # آیکون‌ها، برندمارک و فونت
+├── assets/         # آیکون‌ها، برندمارک، فونت و تصویر صفحهٔ خطا
+│   └── errorpage.png  # اسکرین صفحهٔ «not available in your country»
 └── README.md       # همین راهنما
 ```
 
