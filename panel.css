@@ -316,6 +316,21 @@ main {
   text-align: justify;
 }
 
+.hint-access {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--ink-muted);
+  text-align: justify;
+}
+
+.hint-access code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
 .foot {
   display: flex;
   flex-direction: column;
