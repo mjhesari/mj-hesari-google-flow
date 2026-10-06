@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MJ Hesari Google Flow",
-  "version": "1.7.3",
+  "version": "1.7.5",
   "minimum_chrome_version": "111",
   "description": "ابزار شخصی جواد حصاری برای رفع محدودیت دسترسی به Google Flow و Stitch — mj-hesari.ir",
   "permissions": [

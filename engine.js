@@ -24,6 +24,17 @@
     minLength: 32,
   };
 
+  // CheckToolAvailability (KV2T2d) field 1. Tiers 4, 5, 6 and 8 paint
+  // flow-pinhole-unavailable-screen ("don't have access to Flow").
+  // 7 paints the age-restricted route. 1 is PAYGATE_TIER_ONE, which the
+  // route guard lets through. cPZSdc:30 is a different flag and does not.
+  // Current jspb stores field 1 at index 0. Older payloads keep a null
+  // hole at index 0 and put field 1 at index 1. A trailing plain object
+  // can also hold field 1 under the key "1".
+  const FLOW_AVAILABILITY_RPCS = new Set(['KV2T2d', 'rThb8d', 'cO7JOb']);
+  const FLOW_BLOCKED_TIERS = new Set([4, 5, 6, 7, 8]);
+  const FLOW_OPEN_TIER = 1;
+
   function adjustFrameLength(lines, index, oldLine, newLine) {
     const declaredLen = Number(lines[index - 1]);
     if (!Number.isFinite(declaredLen)) return;
@@ -59,10 +70,37 @@
     return flipped;
   }
 
+  function blockedFlowTier(value) {
+    return typeof value === 'number' && FLOW_BLOCKED_TIERS.has(value);
+  }
+
+  function openFlowAvailability(payload) {
+    if (!Array.isArray(payload) || !payload.length) return false;
+    let changed = false;
+    if (blockedFlowTier(payload[0])) {
+      payload[0] = FLOW_OPEN_TIER;
+      changed = true;
+    } else if (payload[0] == null && blockedFlowTier(payload[1])) {
+      payload[1] = FLOW_OPEN_TIER;
+      changed = true;
+    }
+    const last = payload[payload.length - 1];
+    if (last && typeof last === 'object' && !Array.isArray(last)) {
+      const key = Object.prototype.hasOwnProperty.call(last, '1') ? '1' : null;
+      if (key && blockedFlowTier(last[key])) {
+        last[key] = FLOW_OPEN_TIER;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   /**
    * Patch config-like batchexecute frames.
    * Primary RPC (cPZSdc) flips flagIndex + all false booleans.
    * Other large array RPCs also flip false booleans — entitlement may live there.
+   * Short availability RPCs (KV2T2d and the same status field) are rewritten
+   * when their tier would route to /unavailable or /age-restricted.
    */
   function patchResponse(body, spec) {
     const lines = body.split('\n');
@@ -91,6 +129,14 @@
         } catch {
           continue;
         }
+
+        if (FLOW_AVAILABILITY_RPCS.has(chunk[1]) && openFlowAvailability(payload)) {
+          chunk[2] = JSON.stringify(payload);
+          hits++;
+          changed = true;
+          allFlipped.push(`${chunk[1]}:tier`);
+        }
+
         if (!Array.isArray(payload) || payload.length < Math.min(8, spec.minLength)) {
           continue;
         }
@@ -1062,6 +1108,34 @@
     });
   }
 
+  // Rebuild a patched body without the network framing headers.
+  // Chrome, Safari and Firefox all decode content-encoding before fetch
+  // resolves, but some of them still expose that header. Copying it onto a
+  // new Response makes the already-decoded text get decoded a second time.
+  function responseWithBody(response, body) {
+    const headers = new Headers();
+    try {
+      response.headers.forEach((value, key) => {
+        if (key === 'content-encoding' || key === 'content-length') return;
+        try {
+          headers.append(key, value);
+        } catch {
+          /* this engine refuses the header on a constructed response */
+        }
+      });
+    } catch {
+      /* headers unreadable */
+    }
+    const status = response.status || 200;
+    const init = { status, headers };
+    if (response.statusText) init.statusText = response.statusText;
+    try {
+      return new Response(body, init);
+    } catch {
+      return new Response(body, { status, headers });
+    }
+  }
+
   // --- fetch ---
   const originalFetch = window.fetch.bind(window);
   window.fetch = async function (input, init) {
@@ -1080,11 +1154,7 @@
       const text = await response.clone().text();
       const body = applyPatch(text);
       if (body === text) return response;
-      return new Response(body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
+      return responseWithBody(response, body);
     } catch (err) {
       setState('schema mismatch — unchanged', {
         error: String(err?.message || err),
