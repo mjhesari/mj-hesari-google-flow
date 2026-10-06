@@ -4,27 +4,71 @@
   const SPEC_MSG = 'cfc-flow-spec';
   const SPEC_REQ = 'cfc-flow-spec-request';
   const ACCESS_DENIED_MSG = 'cfc-flow-access-denied';
+  const IS_STITCH = location.hostname === 'stitch.withgoogle.com';
 
   let cached;
 
-  async function getSpec() {
-    if (cached !== undefined) return cached;
-    try {
-      const reply = await chrome.runtime.sendMessage({ type: 'getSpec' });
-      cached = reply?.ok && reply.spec ? reply.spec : null;
-    } catch {
-      cached = null;
-    }
-    return cached;
+  function getSpec() {
+    if (IS_STITCH) return Promise.resolve(null);
+    if (cached !== undefined) return Promise.resolve(cached);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (spec) => {
+        if (settled) return;
+        settled = true;
+        cached = spec;
+        resolve(spec);
+      };
+      try {
+        chrome.runtime.sendMessage({ type: 'getSpec' }, (reply) => {
+          // Reading lastError marks the port failure as handled. Otherwise
+          // Chrome lists this file under the extension errors.
+          if (chrome.runtime.lastError || !reply?.ok || !reply.spec) {
+            finish(null);
+            return;
+          }
+          finish(reply.spec);
+        });
+      } catch {
+        finish(null);
+      }
+    });
   }
 
   function publish(spec) {
-    window.postMessage({ type: SPEC_MSG, spec }, location.origin);
+    try {
+      window.postMessage({ type: SPEC_MSG, spec }, location.origin);
+    } catch {
+      /* origin cannot receive the spec */
+    }
   }
 
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
+    if (event.data?.type === 'cfc-stitch-apply' && event.data.id) {
+      const id = String(event.data.id);
+      let ok = false;
+      try {
+        const holder = document.getElementById('mj-gate-' + id);
+        const el = holder?.content?.querySelector('script');
+        if (!el) throw new Error('missing gate script');
+        try {
+          el.text = event.data.code;
+        } catch {
+          const policy = window.trustedTypes?.createPolicy('mj-hesari#stitch', {
+            createScript: (input) => String(input),
+          });
+          el.text = policy.createScript(event.data.code);
+        }
+        ok = true;
+      } catch {
+        ok = false;
+      }
+      window.postMessage({ type: 'cfc-stitch-applied', id, ok }, location.origin);
+      return;
+    }
     if (event.data?.type === SPEC_REQ) {
+      if (IS_STITCH) return;
       getSpec().then(publish);
       return;
     }
@@ -33,7 +77,9 @@
       // "works once → clear → works → refresh broken" loop.
       // Log for the panel / console instead.
       console.warn(
-        '[MJ Hesari Flow] access denied observed',
+        IS_STITCH
+          ? '[MJ Hesari Stitch] access denied observed'
+          : '[MJ Hesari Flow] access denied observed',
         event.data.reason,
         'applied=',
         event.data.applied,
@@ -43,5 +89,5 @@
     }
   });
 
-  getSpec().then(publish);
+  if (!IS_STITCH) getSpec().then(publish);
 })();

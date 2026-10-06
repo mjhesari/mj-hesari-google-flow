@@ -1,6 +1,6 @@
 # MJ Hesari Google Flow
 
-افزونهٔ کروم شخصی [جواد حصاری (MJ Hesari)](https://www.mj-hesari.ir/) برای رفع محدودیت دسترسی به [Google Flow](https://flow.google.com/).
+افزونهٔ کروم شخصی [جواد حصاری (MJ Hesari)](https://www.mj-hesari.ir/) برای رفع محدودیت دسترسی به [Google Flow](https://flow.google.com/) و [Google Stitch](https://stitch.withgoogle.com/).
 
 > این ابزار برای دور زدن صفحهٔ `/unavailable` و محدودیت جغرافیایی سمت کلاینت طراحی شده است. برای کار درست، به VPN با IP ثابت کشورهای پشتیبانی‌شده نیاز دارید.
 
@@ -10,7 +10,7 @@
 
 ## این صفحه برای چیست؟
 
-اگر هنگام باز کردن [flow.google.com](https://flow.google.com/) با یکی از پیام‌های زیر روبه‌رو شدید، همین افزونه برای رفع همان محدودیت ساخته شده است.
+اگر هنگام باز کردن [flow.google.com](https://flow.google.com/) یا [stitch.withgoogle.com](https://stitch.withgoogle.com/) با یکی از پیام‌های زیر روبه‌رو شدید، همین افزونه برای رفع همان محدودیت ساخته شده است.
 
 ### ۱) محدودیت جغرافیایی
 
@@ -24,7 +24,7 @@
 
 > **It looks like you don't have access to Flow.**
 
-پارامتر `pli` در سرویس‌های گوگل معمولاً یعنی «Previously Logged In» (تأیید نشست/اکانت). Flow وقتی entitlement سمت کلاینت fail شود، به `/?pli=1` می‌رود و همین صفحه را نشان می‌دهد.
+پارامتر `pli` در سرویس‌های گوگل معمولاً یعنی «Previously Logged In» (تأیید نشست/اکانت). Flow و Stitch وقتی بررسی دسترسی سمت کلاینت fail شود، به `/?pli=1` می‌روند و همین صفحه را نشان می‌دهند. Stitch در کنسول معمولاً `isStitchEnabledInCountry=false` را هم لاگ می‌کند.
 
 افزونه این کارها را می‌کند:
 - پارامتر `pli` را از URL برمی‌دارد
@@ -71,7 +71,7 @@ cd mj-hesari-google-flow
 | ۳ | سوییچ **فعالسازی ابزار** را روشن کنید |
 | ۴ | روی **بازکردن گوگل فلو** بزنید |
 | ۵ | اگر صفحهٔ محدودیت (`/unavailable`) بود، **بارگذاری دوباره گوگل فلو** را بزنید |
-| ۶ | اگر به `/?pli=1` یا «don't have access» رفت، **بازنشانی کامل Flow** را بزنید |
+| ۶ | اگر به `/?pli=1` یا «don't have access» رفت، **بازنشانی کامل** همان سایت (Flow یا Stitch) را بزنید |
 | ۷ | یک‌بار صفحه را رفرش کنید تا پچ اعمال شود |
 
 ### وضعیت‌های پنل
@@ -88,8 +88,8 @@ cd mj-hesari-google-flow
 - بدون VPN درست، حتی با افزونه هم ممکن است Flow کار نکند
 - بعد از هر آپدیت کد، در `chrome://extensions` روی **Reload** بزنید
 - اگر روی `/unavailable` ماندید، دکمهٔ بارگذاری دوباره مسیر را به ریشه برمی‌گرداند
-- اگر به `/?pli=1` پرتاب شدید، افزونه سعی می‌کند خودکار بازنشانی کند؛ در غیر این صورت دکمهٔ پنل را بزنید
-- افزونه را فقط روی `flow.google.com` استفاده کنید
+- اگر به `/?pli=1` پرتاب شدید، Stitch یک‌بار خودش به صفحهٔ اصلی برمی‌گردد. اگر دوباره ماند، دکمهٔ بازنشانی پنل را بزنید
+- افزونه روی `flow.google.com` و `stitch.withgoogle.com` کار می‌کند
 
 ---
 
@@ -99,7 +99,8 @@ cd mj-hesari-google-flow
 - پچ پاسخ‌های `batchexecute` روی **XHR** و **fetch** (بدون race روی رفرش)
 - ریدایرکت خودکار از `/unavailable` و `/unsupported-country`
 - حذف پارامتر `pli` و بازیابی از صفحهٔ «don't have access»
-- بازنشانی کامل داده‌های `flow.google.com` (کوکی + حافظهٔ محلی)
+- بازنشانی کامل داده‌های `flow.google.com` و `stitch.withgoogle.com` (کوکی + حافظهٔ محلی)
+- روی Stitch، پرتاب `User is not enabled for Stitch` داخل اسکریپت برنامه خنثی می‌شود تا `isStitchEnabledInCountry=false` جلوی بارگذاری را نگیرد
 - پنل برندشده با لینک‌های [MJ Hesari](https://www.mj-hesari.ir/#contact)
 
 ---
@@ -110,7 +111,7 @@ cd mj-hesari-google-flow
 mj-hesari-google-flow/
 ├── manifest.json   # تنظیمات افزونه (Manifest V3)
 ├── app.js          # service worker — ثبت اسکریپت و دریافت spec
-├── engine.js       # موتور پچ داخل صفحهٔ Flow (MAIN world)
+├── engine.js       # موتور پچ داخل صفحهٔ Flow و Stitch (MAIN world)
 ├── link.js         # پل بین افزونه و صفحه برای ارسال spec
 ├── stat.js         # گزارش وضعیت به پنل
 ├── panel.html      # UI پنل

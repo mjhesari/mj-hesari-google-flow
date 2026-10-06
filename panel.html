@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none';">
-<title>MJ Hesari Flow</title>
+<title>MJ Hesari Flow &amp; Stitch</title>
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
@@ -21,15 +21,15 @@
   </header>
 
   <section class="hero">
-    <h1 class="hero-title">ورود به <span class="hero-accent">Google Flow</span></h1>
-    <p class="hero-sub">ابزار شخصی برای رفع محدودیت دسترسی به گوگل فلو — ساخته‌شده توسط جواد حصاری.</p>
+    <h1 class="hero-title">ورود به <span class="hero-accent">Flow</span> و <span class="hero-accent">Stitch</span></h1>
+    <p class="hero-sub">ابزار شخصی برای رفع محدودیت دسترسی به گوگل فلو و گوگل استیچ — ساخته‌شده توسط جواد حصاری.</p>
   </section>
 
   <section class="card control">
     <div class="control-row">
       <div class="control-label">
         <span class="control-name">فعالسازی ابزار</span>
-        <span class="control-hint">پس از فعالسازی یک بار صفحه گوگل فلو را بازنشانی کنید</span>
+        <span class="control-hint">پس از فعالسازی یک بار صفحه Flow یا Stitch را بازنشانی کنید</span>
       </div>
       <button id="toggle" class="switch" role="switch" aria-checked="false" aria-label="فعالسازی ابزار" disabled>
         <span class="switch-thumb"></span>
@@ -43,10 +43,11 @@
 
   <div class="actions">
     <button id="open" class="btn btn-primary">بازکردن گوگل فلو</button>
-    <button id="reload" class="btn btn-ghost" hidden>بارگذاری دوباره گوگل فلو</button>
+    <button id="openStitch" class="btn btn-ghost" type="button">بازکردن گوگل استیچ</button>
+    <button id="reload" class="btn btn-ghost" hidden>بارگذاری دوباره</button>
     <button id="clearCookies" class="btn btn-ghost" type="button">بازنشانی کامل Flow</button>
   </div>
-  <p class="hint-access">اگر به <code>/?pli=1</code> رفت یا «don't have access» دیدید، این دکمه را بزنید.</p>
+  <p class="hint-access">اگر Flow یا Stitch به <code>/?pli=1</code> رفت یا «don't have access» دیدید، بازنشانی همان سایت را بزنید.</p>
 
   <p id="error" class="error" role="alert"></p>
 

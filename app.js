@@ -1,7 +1,17 @@
 const SPEC_URL = 'https://flow.cfcnode.com/v1/flow-spec',
   SPEC_TTL_MS = 6 * 60 * 60 * 1000,
-  FLOW_ORIGIN = 'https://flow.google.com',
-  FLOW_COOKIE_DOMAINS = ['flow.google.com', '.flow.google.com'],
+  SITES = {
+    flow: {
+      id: 'flow',
+      origin: 'https://flow.google.com',
+      hosts: ['flow.google.com'],
+    },
+    stitch: {
+      id: 'stitch',
+      origin: 'https://stitch.withgoogle.com',
+      hosts: ['stitch.withgoogle.com'],
+    },
+  },
   registration = {
     id: 'flow-helper',
     matches: ['https://flow.google.com/*'],
@@ -10,8 +20,17 @@ const SPEC_URL = 'https://flow.cfcnode.com/v1/flow-spec',
     world: 'MAIN',
     persistAcrossSessions: true,
   },
-  REGISTRATIONS = [registration],
-  REGISTRATION_IDS = REGISTRATIONS.map((a) => a.id);
+  stitchRegistration = {
+    id: 'stitch-helper',
+    matches: ['https://stitch.withgoogle.com/*'],
+    js: ['engine.js'],
+    runAt: 'document_start',
+    world: 'MAIN',
+    allFrames: true,
+    persistAcrossSessions: true,
+  },
+  REGISTRATIONS = [registration, stitchRegistration],
+  REGISTRATION_IDS = REGISTRATIONS.map((item) => item.id);
 
 let specCache = null,
   specFetchedAt = 0,
@@ -26,10 +45,29 @@ function errText(err) {
   return err.message || String(err);
 }
 
-async function clearFlowCookies() {
+function siteFromUrl(url) {
+  if (typeof url !== 'string') return null;
+  if (url.startsWith(SITES.stitch.origin)) return SITES.stitch;
+  if (url.startsWith(SITES.flow.origin)) return SITES.flow;
+  return null;
+}
+
+function domainMatches(domain, host) {
+  const bare = String(domain || '').replace(/^\./, '').toLowerCase();
+  const needle = host.toLowerCase();
+  return bare === needle || bare.endsWith('.' + needle);
+}
+
+function resolveSite(message, sender) {
+  if (message?.site && SITES[message.site]) return SITES[message.site];
+  return siteFromUrl(sender.tab?.url) || SITES.flow;
+}
+
+async function clearSiteCookies(site) {
   const seen = new Set();
   const cookies = [];
-  for (const domain of FLOW_COOKIE_DOMAINS) {
+  const domains = site.hosts.flatMap((host) => [host, '.' + host]);
+  for (const domain of domains) {
     let batch = [];
     try {
       batch = await chrome.cookies.getAll({ domain });
@@ -52,9 +90,9 @@ async function clearFlowCookies() {
 
   // Also catch host-only cookies visible for the origin URL.
   try {
-    const byUrl = await chrome.cookies.getAll({ url: FLOW_ORIGIN + '/' });
+    const byUrl = await chrome.cookies.getAll({ url: site.origin + '/' });
     for (const cookie of byUrl) {
-      if (!/(^|\.)flow\.google\.com$/i.test(cookie.domain.replace(/^\./, ''))) {
+      if (!site.hosts.some((host) => domainMatches(cookie.domain, host))) {
         continue;
       }
       const key = [
@@ -94,13 +132,13 @@ async function clearFlowCookies() {
   return removed;
 }
 
-async function clearOriginStorage() {
+async function clearOriginStorage(site) {
   // cookies must NOT be included: Chrome rejects origins + cookies together.
   if (!chrome.browsingData?.remove) {
     throw new Error('مجوز browsingData فعال نیست؛ افزونه را Reload کنید');
   }
   await chrome.browsingData.remove(
-    { origins: [FLOW_ORIGIN] },
+    { origins: [site.origin] },
     {
       cacheStorage: true,
       indexedDB: true,
@@ -145,18 +183,18 @@ async function clearTabStorage(tabId) {
   }
 }
 
-async function clearFlowSiteData(tabId) {
+async function clearSiteData(site, tabId) {
   const warnings = [];
 
   try {
-    await clearOriginStorage();
+    await clearOriginStorage(site);
   } catch (err) {
     warnings.push(errText(err));
   }
 
   let removedCookies = 0;
   try {
-    removedCookies = await clearFlowCookies();
+    removedCookies = await clearSiteCookies(site);
   } catch (err) {
     warnings.push(errText(err));
   }
@@ -170,12 +208,12 @@ async function clearFlowSiteData(tabId) {
   return { removedCookies, warnings };
 }
 
-async function reloadFlowClean(tabId) {
-  const cleanUrl = FLOW_ORIGIN + '/';
+async function reloadClean(site, tabId) {
+  const cleanUrl = site.origin + '/';
   if (typeof tabId === 'number') {
     try {
       const tab = await chrome.tabs.get(tabId);
-      if (tab.url?.startsWith(FLOW_ORIGIN)) {
+      if (tab.url?.startsWith(site.origin)) {
         await chrome.tabs.update(tabId, { url: cleanUrl });
         return;
       }
@@ -184,12 +222,49 @@ async function reloadFlowClean(tabId) {
     }
   }
   try {
-    const tabs = await chrome.tabs.query({ url: FLOW_ORIGIN + '/*' });
+    const tabs = await chrome.tabs.query({ url: site.origin + '/*' });
     if (tabs[0]?.id != null) {
       await chrome.tabs.update(tabs[0].id, { url: cleanUrl });
     }
   } catch {
     /* ignore */
+  }
+}
+
+async function syncRegistrations(enabled) {
+  const existing = await chrome.scripting.getRegisteredContentScripts({
+    ids: REGISTRATION_IDS,
+  });
+  if (!enabled) {
+    if (!existing.length) return;
+    await chrome.scripting.unregisterContentScripts({
+      ids: existing.map((item) => item.id),
+    });
+    return;
+  }
+  const have = new Set(existing.map((item) => item.id));
+  const missing = REGISTRATIONS.filter((item) => !have.has(item.id));
+  if (missing.length) {
+    try {
+      await chrome.scripting.registerContentScripts(missing);
+    } catch (err) {
+      if (!/duplicate/i.test(errText(err))) throw err;
+    }
+  }
+}
+
+async function ensureCompanionSites() {
+  const existing = await chrome.scripting.getRegisteredContentScripts({
+    ids: REGISTRATION_IDS,
+  });
+  const have = new Set(existing.map((item) => item.id));
+  if (!have.has(registration.id) && !have.has(stitchRegistration.id)) return;
+  const missing = REGISTRATIONS.filter((item) => !have.has(item.id));
+  if (!missing.length) return;
+  try {
+    await chrome.scripting.registerContentScripts(missing);
+  } catch (err) {
+    if (!/duplicate/i.test(errText(err))) throw err;
   }
 }
 
@@ -218,16 +293,36 @@ async function fetchSpec() {
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason !== 'install' && reason !== 'update') return;
   try {
-    await chrome.scripting.registerContentScripts(REGISTRATIONS);
+    await syncRegistrations(true);
   } catch (err) {
     console.error('MJ Hesari Flow setup failed:', errText(err));
   }
+});
+
+ensureCompanionSites().catch((err) => {
+  console.error('MJ Hesari Flow setup failed:', errText(err));
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id && sender.id !== chrome.runtime.id) return;
 
   if (message?.type === 'getSpec') {
+    if (siteFromUrl(sender.tab?.url)?.id === 'stitch') {
+      sendResponse({
+        ok: true,
+        spec: {
+          origin: SITES.stitch.origin,
+          path: '/_/Nemo/data/batchexecute',
+          rpcids: 'N5xENe',
+          tag: 'wrb.fr',
+          flagIndex: 0,
+          minLength: 1,
+          lenient: true,
+          namedGates: true,
+        },
+      });
+      return false;
+    }
     fetchSpec()
       .then((spec) => sendResponse({ ok: !!spec, spec }))
       .catch((err) => sendResponse({ ok: false, error: errText(err) }));
@@ -236,17 +331,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (!sender.tab && message?.type === 'setEnabled') {
     (async () => {
-      const existing = await chrome.scripting.getRegisteredContentScripts({
-        ids: REGISTRATION_IDS,
-      });
-      if (message.enabled && existing.length === 0) {
-        await chrome.scripting.registerContentScripts(REGISTRATIONS);
-      }
-      if (!message.enabled && existing.length > 0) {
-        await chrome.scripting.unregisterContentScripts({
-          ids: REGISTRATION_IDS,
-        });
-      }
+      await syncRegistrations(!!message.enabled);
       sendResponse({ ok: true });
     })().catch((err) => sendResponse({ ok: false, error: errText(err) }));
     return true;
@@ -264,10 +349,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         lastAutoResetAt = Date.now();
       }
+      const site = resolveSite(message, sender);
       const tabId = message.tabId ?? sender.tab?.id;
-      const result = await clearFlowSiteData(tabId);
-      await reloadFlowClean(tabId);
-      sendResponse({ ok: true, ...result });
+      const result = await clearSiteData(site, tabId);
+      await reloadClean(site, tabId);
+      sendResponse({ ok: true, site: site.id, ...result });
     })().catch((err) => sendResponse({ ok: false, error: errText(err) }));
     return true;
   }

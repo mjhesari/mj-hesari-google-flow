@@ -1,5 +1,18 @@
-const FLOW_URL = 'https://flow.google.com/',
-  CONTENT_SCRIPT_ID = 'flow-helper',
+const SITES = {
+    flow: {
+      id: 'flow',
+      origin: 'https://flow.google.com',
+      reloadLabel: 'بارگذاری دوباره گوگل فلو',
+      clearLabel: 'بازنشانی کامل Flow',
+    },
+    stitch: {
+      id: 'stitch',
+      origin: 'https://stitch.withgoogle.com',
+      reloadLabel: 'بارگذاری دوباره گوگل استیچ',
+      clearLabel: 'بازنشانی کامل Stitch',
+    },
+  },
+  SCRIPT_IDS = ['flow-helper', 'stitch-helper'],
   BLOCKED_PATHS = ['/unsupported-country', '/unavailable'],
   STATES = {
     enabled: {
@@ -50,12 +63,12 @@ const FLOW_URL = 'https://flow.google.com/',
     cookiesCleared: {
       dot: 'ok',
       strong: true,
-      text: 'داده‌های Flow پاک شد. صفحه تمیز بارگذاری می‌شود.',
+      text: 'داده‌های سایت پاک شد. صفحه تمیز بارگذاری می‌شود.',
     },
   },
-  MSG_PICK_FLOW_TAB = 'ابتدا وارد یک تب Flow شوید.',
+  MSG_PICK_TAB = 'ابتدا وارد یک تب Flow یا Stitch شوید.',
   MSG_SAVE_FAILED = 'تنظیمات ذخیره نشد.',
-  MSG_CLEAR_FAILED = 'بازنشانی داده‌های Flow انجام نشد.';
+  MSG_CLEAR_FAILED = 'بازنشانی داده‌ها انجام نشد.';
 
 const toggle = document.getElementById('toggle'),
   statusEl = document.getElementById('status'),
@@ -64,6 +77,12 @@ const toggle = document.getElementById('toggle'),
   clearCookies = document.getElementById('clearCookies');
 
 let tab;
+
+function siteFromUrl(url) {
+  if (url?.startsWith(SITES.stitch.origin)) return SITES.stitch;
+  if (url?.startsWith(SITES.flow.origin)) return SITES.flow;
+  return null;
+}
 
 function setStatus(key) {
   const state = STATES[key];
@@ -79,16 +98,18 @@ function setEnabled(enabled) {
 
 async function init() {
   const scripts = await chrome.scripting.getRegisteredContentScripts({
-    ids: [CONTENT_SCRIPT_ID],
+    ids: SCRIPT_IDS,
   });
   const enabled = scripts.length > 0;
   setEnabled(enabled);
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const onFlow = tab?.url?.startsWith(FLOW_URL);
-  reload.hidden = !onFlow;
+  const site = siteFromUrl(tab?.url);
+  reload.hidden = !site;
+  if (site) reload.textContent = site.reloadLabel;
+  clearCookies.textContent = (site || SITES.flow).clearLabel;
   setStatus(enabled ? 'enabled' : 'disabled');
 
-  if (onFlow && enabled) {
+  if (site && enabled) {
     try {
       const status = await chrome.tabs.sendMessage(tab.id, { type: 'status' });
       if (status.applied) setStatus('active');
@@ -134,12 +155,16 @@ toggle.addEventListener('click', async () => {
 });
 
 document.getElementById('open').onclick = () =>
-  chrome.tabs.create({ url: FLOW_URL });
+  chrome.tabs.create({ url: SITES.flow.origin + '/' });
+
+document.getElementById('openStitch').onclick = () =>
+  chrome.tabs.create({ url: SITES.stitch.origin + '/' });
 
 reload.onclick = async () => {
   try {
     const current = await chrome.tabs.get(tab.id);
-    if (!current.url?.startsWith(FLOW_URL)) throw new Error(MSG_PICK_FLOW_TAB);
+    const site = siteFromUrl(current.url);
+    if (!site) throw new Error(MSG_PICK_TAB);
     const url = new URL(current.url);
     const blocked = BLOCKED_PATHS.find(
       (path) => url.pathname === path || url.pathname.endsWith(path),
@@ -164,9 +189,11 @@ clearCookies.onclick = async () => {
   clearCookies.disabled = true;
   error.textContent = '';
   try {
+    const site = siteFromUrl(tab?.url) || SITES.flow;
     const result = await chrome.runtime.sendMessage({
       type: 'clearFlowSiteData',
-      tabId: tab?.url?.startsWith(FLOW_URL) ? tab.id : undefined,
+      site: site.id,
+      tabId: tab?.url?.startsWith(site.origin) ? tab.id : undefined,
     });
     if (result == null) {
       throw new Error(
@@ -177,8 +204,8 @@ clearCookies.onclick = async () => {
       throw new Error(result.error || MSG_CLEAR_FAILED);
     }
     setStatus('cookiesCleared');
-    if (!tab?.url?.startsWith(FLOW_URL)) {
-      await chrome.tabs.create({ url: FLOW_URL });
+    if (!tab?.url?.startsWith(site.origin)) {
+      await chrome.tabs.create({ url: site.origin + '/' });
     }
     window.close();
   } catch (err) {
