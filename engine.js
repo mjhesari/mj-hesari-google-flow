@@ -390,14 +390,40 @@
     return out;
   }
 
+  /**
+   * The country flag is read from WIZ_global_data into the user-config
+   * property, then folded into an availability boolean:
+   *   this.U=_.rp(_.ke("mL6Y7b"),!1);
+   *   this.K=<this.U || internal-tester flag, unless CAN_ACCESS_STITCH=false>;
+   * Older bundles stored it on this.M with _.np(_.je(...)). Keep both
+   * patterns, then pin K so the router never hits the unavailable screen
+   * even when flags[0] is false.
+   */
   function patchStitchModule(code) {
     if (typeof code !== 'string') return code;
     let next = code;
     if (next.includes('mL6Y7b')) {
-      next = next.replace(
-        /this\.M=_\.np\(_\.je\("mL6Y7b"\),!1\)/g,
-        'this.M=!0',
-      );
+      const newGateRe =
+        /this\.[A-Za-z0-9_$]+=_\.[A-Za-z0-9_$]+\(_\.[A-Za-z0-9_$]+\("mL6Y7b"\),!1\)/;
+      if (newGateRe.test(next)) {
+        const flagAt = next.indexOf('mL6Y7b');
+        const gateAt = next.indexOf('this.K=', flagAt);
+        if (gateAt > flagAt && gateAt - flagAt < 2000) {
+          const gateEnd = next.indexOf(';', gateAt);
+          if (gateEnd > gateAt && gateEnd - gateAt < 500) {
+            next = next.slice(0, gateAt) + 'this.K=!0' + next.slice(gateEnd);
+          }
+        }
+      }
+      next = next
+        .replace(
+          /this\.M=_\.np\(_\.je\("mL6Y7b"\),!1\)/g,
+          'this.M=!0',
+        )
+        .replace(
+          /(this\.[A-Za-z0-9_$]+=)_\.[A-Za-z0-9_$]+\(_\.[A-Za-z0-9_$]+\("mL6Y7b"\),!1\)/g,
+          '$1!0',
+        );
     }
     return neutralizeStitchGate(next);
   }
