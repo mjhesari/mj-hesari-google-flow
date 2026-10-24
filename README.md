@@ -96,7 +96,7 @@ cd mj-hesari-google-flow
 ## امکانات
 
 - فعال / غیرفعال کردن ابزار از پنل
-- پچ پاسخ‌های `batchexecute` روی **XHR** و **fetch** (بدون race روی رفرش)
+- پچ فقط پاسخ‌های گیت Flow (availability و `cPZSdc`) روی **XHR** و **fetch**؛ بقیهٔ درخواست‌ها دست‌نخورده رد می‌شوند و بعد از رد شدن گیت، hookها به حالت native برمی‌گردند
 - ریدایرکت خودکار از `/unavailable` و `/unsupported-country`
 - حذف پارامتر `pli` و بازیابی از صفحهٔ «don't have access»
 - بازنشانی کامل داده‌های `flow.google.com` و `stitch.withgoogle.com` (کوکی + حافظهٔ محلی)

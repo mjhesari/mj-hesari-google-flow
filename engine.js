@@ -48,28 +48,6 @@
     lines[index - 1] = String(declaredLen + lenFn(newLine) - lenFn(cleanOld));
   }
 
-  function flipFalseFlags(payload, forceIndex) {
-    const flipped = [];
-    if (
-      Number.isInteger(forceIndex) &&
-      forceIndex >= 0 &&
-      forceIndex < payload.length &&
-      (payload[forceIndex] === null || typeof payload[forceIndex] === 'boolean')
-    ) {
-      if (payload[forceIndex] !== true) {
-        flipped.push(forceIndex);
-        payload[forceIndex] = true;
-      }
-    }
-    for (let i = 0; i < payload.length; i++) {
-      if (payload[i] === false) {
-        payload[i] = true;
-        if (!flipped.includes(i)) flipped.push(i);
-      }
-    }
-    return flipped;
-  }
-
   function blockedFlowTier(value) {
     return typeof value === 'number' && FLOW_BLOCKED_TIERS.has(value);
   }
@@ -96,16 +74,16 @@
   }
 
   /**
-   * Patch config-like batchexecute frames.
-   * Primary RPC (cPZSdc) flips flagIndex + all false booleans.
-   * Other large array RPCs also flip false booleans — entitlement may live there.
-   * Short availability RPCs (KV2T2d and the same status field) are rewritten
-   * when their tier would route to /unavailable or /age-restricted.
+   * Patch only the gate frames: availability RPCs move a blocked tier to 1,
+   * and the primary RPC sets its flagIndex slot to true. Every other
+   * batchexecute response is returned byte-for-byte.
    */
   function patchResponse(body, spec) {
     const lines = body.split('\n');
     let before;
     let hits = 0;
+    let primary = false;
+    let availability = false;
     const allFlipped = [];
 
     for (let i = 0; i < lines.length; i++) {
@@ -130,52 +108,37 @@
           continue;
         }
 
-        if (FLOW_AVAILABILITY_RPCS.has(chunk[1]) && openFlowAvailability(payload)) {
+        if (FLOW_AVAILABILITY_RPCS.has(chunk[1])) {
+          if (!openFlowAvailability(payload)) continue;
+          availability = true;
           chunk[2] = JSON.stringify(payload);
           hits++;
           changed = true;
           allFlipped.push(`${chunk[1]}:tier`);
-        }
-
-        if (!Array.isArray(payload) || payload.length < Math.min(8, spec.minLength)) {
           continue;
         }
 
-        const isPrimary = chunk[1] === spec.rpcids;
-        if (isPrimary) {
-          if (
-            payload.length < spec.minLength ||
-            (payload[spec.flagIndex] !== null &&
-              typeof payload[spec.flagIndex] !== 'boolean')
-          ) {
-            throw new Error('Unexpected config schema');
-          }
-          before = payload[spec.flagIndex];
+        if (chunk[1] !== spec.rpcids) continue;
+        if (!Array.isArray(payload) || payload.length < Math.min(8, spec.minLength)) {
+          continue;
+        }
+        if (
+          payload.length < spec.minLength ||
+          (payload[spec.flagIndex] !== null &&
+            typeof payload[spec.flagIndex] !== 'boolean')
+        ) {
+          throw new Error('Unexpected config schema');
         }
 
-        // Only touch payloads that look like feature-flag bags (have bool/null slots).
-        const boolish = payload.filter(
-          (v) => v === null || typeof v === 'boolean',
-        ).length;
-        if (!isPrimary && boolish < 3) continue;
+        before = payload[spec.flagIndex];
+        if (payload[spec.flagIndex] === true) continue;
 
-        const flipped = flipFalseFlags(
-          payload,
-          isPrimary ? spec.flagIndex : -1,
-        );
-        if (!flipped.length && !isPrimary) continue;
-
-        if (isPrimary && payload[spec.flagIndex] !== true) {
-          payload[spec.flagIndex] = true;
-          if (!flipped.includes(spec.flagIndex)) flipped.push(spec.flagIndex);
-        }
-
+        payload[spec.flagIndex] = true;
+        primary = true;
         chunk[2] = JSON.stringify(payload);
         hits++;
         changed = true;
-        for (const idx of flipped) {
-          allFlipped.push(`${chunk[1]}:${idx}`);
-        }
+        allFlipped.push(`${chunk[1]}:${spec.flagIndex}`);
       }
 
       if (!changed) continue;
@@ -190,6 +153,8 @@
       body: lines.join('\n'),
       before,
       hits,
+      primary,
+      availability,
       flipped: allFlipped,
       unchanged: hits === 0,
     };
@@ -958,8 +923,9 @@
   }
 
   function installHistoryGuards() {
-    const wrap = (method) => {
-      const original = history[method];
+    savedPushState = history.pushState;
+    savedReplaceState = history.replaceState;
+    const wrap = (method, original) => {
       history[method] = function (state, title, url) {
         if (typeof url === 'string') {
           const next = sanitizeUrl(url);
@@ -968,8 +934,8 @@
         return original.call(this, state, title, url);
       };
     };
-    wrap('pushState');
-    wrap('replaceState');
+    wrap('pushState', savedPushState);
+    wrap('replaceState', savedReplaceState);
     window.addEventListener('popstate', escapeBadRoute);
     escapeBadRoute();
   }
@@ -996,6 +962,7 @@
       const proto = Location.prototype;
       const desc = Object.getOwnPropertyDescriptor(proto, 'href');
       if (desc?.set && desc.configurable) {
+        savedHrefDescriptor = desc;
         Object.defineProperty(proto, 'href', {
           configurable: true,
           enumerable: desc.enumerable,
@@ -1007,8 +974,12 @@
           },
         });
       }
-      for (const method of ['assign', 'replace']) {
-        const original = proto[method];
+      savedLocationAssign = proto.assign;
+      savedLocationReplace = proto.replace;
+      for (const [method, original] of [
+        ['assign', savedLocationAssign],
+        ['replace', savedLocationReplace],
+      ]) {
         if (typeof original !== 'function') continue;
         proto[method] = function (url) {
           const rewritten = rewrite(String(url));
@@ -1078,10 +1049,68 @@
   }
 
   let spec = FALLBACK_SPEC;
+  let disarmed = false;
+  let disarmTimer = null;
+  let disarmDeadline = 0;
+  let primaryPatched = false;
+  let availabilityPatched = false;
+  let savedPushState = null;
+  let savedReplaceState = null;
+  let savedHrefDescriptor = null;
+  let savedLocationAssign = null;
+  let savedLocationReplace = null;
+  const savedXhrGetters = [];
   const trackedXhr = new WeakMap();
   const patchedBodies = new WeakMap();
 
+  function flowGateRpcIds() {
+    const ids = new Set(FLOW_AVAILABILITY_RPCS);
+    for (const id of String(spec.rpcids).split(',')) {
+      const trimmed = id.trim();
+      if (trimmed) ids.add(trimmed);
+    }
+    return ids;
+  }
+
+  function isFlowGateRequest(url) {
+    let parsed;
+    try {
+      parsed = new URL(url, location.href);
+    } catch {
+      return false;
+    }
+    if (!matchesBatchExecute(parsed.href)) return false;
+    const requested = parsed.searchParams.get('rpcids');
+    if (!requested) return false;
+    const targets = flowGateRpcIds();
+    return requested.split(',').some((id) => targets.has(id.trim()));
+  }
+
+  function shouldPatchResponse(url) {
+    if (disarmed) return false;
+    if (IS_STITCH) return matchesBatchExecute(url);
+    return isFlowGateRequest(url);
+  }
+
+  function scheduleDisarm(delay) {
+    if (IS_STITCH || disarmed) return;
+    const fireAt = Date.now() + delay;
+    if (disarmTimer && fireAt >= disarmDeadline) return;
+    clearTimeout(disarmTimer);
+    disarmDeadline = fireAt;
+    disarmTimer = setTimeout(restoreNativeHooks, delay);
+  }
+
+  function noteGatePatch(result) {
+    if (result.availability) availabilityPatched = true;
+    if (result.primary) primaryPatched = true;
+    // Keep both gate kinds patched through the first follow-up calls, then
+    // hand the page back its own hooks.
+    scheduleDisarm(primaryPatched && availabilityPatched ? 5000 : 30000);
+  }
+
   function applyPatch(value) {
+    if (disarmed) return value;
     const result = IS_STITCH ? patchStitchResponse(value) : patchResponse(value, spec);
     if (!result.unchanged) {
       diagnostic.applied++;
@@ -1093,6 +1122,7 @@
         hits: result.hits,
         flipped: diagnostic.flipped,
       });
+      if (!IS_STITCH) noteGatePatch(result);
     }
     return result.unchanged ? value : result.body;
   }
@@ -1102,7 +1132,7 @@
   const originalOpen = xhrProto.open;
 
   xhrProto.open = function (method, url, ...rest) {
-    trackedXhr.set(this, matchesBatchExecute(url));
+    trackedXhr.set(this, shouldPatchResponse(url));
     patchedBodies.delete(this);
     return Reflect.apply(originalOpen, this, [method, url, ...rest]);
   };
@@ -1111,6 +1141,7 @@
     const descriptor = Object.getOwnPropertyDescriptor(xhrProto, prop);
     if (!descriptor?.get || !descriptor.configurable) continue;
 
+    savedXhrGetters.push({ prop, descriptor });
     Object.defineProperty(xhrProto, prop, {
       ...descriptor,
       get() {
@@ -1163,7 +1194,9 @@
   }
 
   // --- fetch ---
-  const originalFetch = window.fetch.bind(window);
+  const nativeFetchRef = window.fetch;
+  const fetchWasOwn = Object.prototype.hasOwnProperty.call(window, 'fetch');
+  const originalFetch = nativeFetchRef.bind(window);
   window.fetch = async function (input, init) {
     const url =
       typeof input === 'string'
@@ -1172,7 +1205,7 @@
           ? input.href
           : input?.url;
 
-    const shouldPatch = matchesBatchExecute(url);
+    const shouldPatch = shouldPatchResponse(url);
     const response = await originalFetch(input, init);
     if (!shouldPatch) return response;
 
@@ -1188,6 +1221,49 @@
       return response;
     }
   };
+
+  function restoreNativeHooks() {
+    if (IS_STITCH || disarmed) return;
+    disarmed = true;
+    if (disarmTimer) clearTimeout(disarmTimer);
+    disarmTimer = null;
+
+    try {
+      if (fetchWasOwn) window.fetch = nativeFetchRef;
+      else delete window.fetch;
+    } catch {
+      /* fetch is locked */
+    }
+
+    try {
+      xhrProto.open = originalOpen;
+      for (const { prop, descriptor } of savedXhrGetters) {
+        Object.defineProperty(xhrProto, prop, descriptor);
+      }
+    } catch {
+      /* XHR prototype is locked */
+    }
+
+    try {
+      if (savedPushState) history.pushState = savedPushState;
+      if (savedReplaceState) history.replaceState = savedReplaceState;
+    } catch {
+      /* history is locked */
+    }
+    window.removeEventListener('popstate', escapeBadRoute);
+
+    try {
+      if (savedHrefDescriptor) {
+        Object.defineProperty(Location.prototype, 'href', savedHrefDescriptor);
+      }
+      if (savedLocationAssign) Location.prototype.assign = savedLocationAssign;
+      if (savedLocationReplace) Location.prototype.replace = savedLocationReplace;
+    } catch {
+      /* Location is locked */
+    }
+
+    setState('applied', { hooks: 'native' });
+  }
 
   let tries = 0;
   const armWith = (next, state = 'armed') => {
