@@ -4,12 +4,14 @@ const SPEC_URL = 'https://flow.cfcnode.com/v1/flow-spec',
     flow: {
       id: 'flow',
       origin: 'https://flow.google.com',
+      origins: ['https://flow.google.com'],
       hosts: ['flow.google.com'],
     },
     stitch: {
       id: 'stitch',
       origin: 'https://stitch.withgoogle.com',
-      hosts: ['stitch.withgoogle.com'],
+      origins: ['https://stitch.withgoogle.com', 'https://stitch.google.com'],
+      hosts: ['stitch.withgoogle.com', 'stitch.google.com'],
     },
   },
   registration = {
@@ -22,7 +24,7 @@ const SPEC_URL = 'https://flow.cfcnode.com/v1/flow-spec',
   },
   stitchRegistration = {
     id: 'stitch-helper',
-    matches: ['https://stitch.withgoogle.com/*'],
+    matches: SITES.stitch.origins.map((origin) => origin + '/*'),
     js: ['engine.js'],
     runAt: 'document_start',
     world: 'MAIN',
@@ -45,10 +47,20 @@ function errText(err) {
   return err.message || String(err);
 }
 
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 function siteFromUrl(url) {
-  if (typeof url !== 'string') return null;
-  if (url.startsWith(SITES.stitch.origin)) return SITES.stitch;
-  if (url.startsWith(SITES.flow.origin)) return SITES.flow;
+  const host = hostnameOf(url);
+  if (!host) return null;
+  for (const site of Object.values(SITES)) {
+    if (site.hosts.includes(host)) return site;
+  }
   return null;
 }
 
@@ -88,26 +100,28 @@ async function clearSiteCookies(site) {
     }
   }
 
-  // Also catch host-only cookies visible for the origin URL.
-  try {
-    const byUrl = await chrome.cookies.getAll({ url: site.origin + '/' });
-    for (const cookie of byUrl) {
-      if (!site.hosts.some((host) => domainMatches(cookie.domain, host))) {
-        continue;
+  // Also catch host-only cookies visible for each origin URL.
+  for (const origin of site.origins) {
+    try {
+      const byUrl = await chrome.cookies.getAll({ url: origin + '/' });
+      for (const cookie of byUrl) {
+        if (!site.hosts.some((host) => domainMatches(cookie.domain, host))) {
+          continue;
+        }
+        const key = [
+          cookie.storeId,
+          cookie.name,
+          cookie.domain,
+          cookie.path,
+          cookie.partitionKey?.topLevelSite || '',
+        ].join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        cookies.push(cookie);
       }
-      const key = [
-        cookie.storeId,
-        cookie.name,
-        cookie.domain,
-        cookie.path,
-        cookie.partitionKey?.topLevelSite || '',
-      ].join('|');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      cookies.push(cookie);
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
 
   let removed = 0;
@@ -138,7 +152,7 @@ async function clearOriginStorage(site) {
     throw new Error('مجوز browsingData فعال نیست؛ افزونه را Reload کنید');
   }
   await chrome.browsingData.remove(
-    { origins: [site.origin] },
+    { origins: site.origins },
     {
       cacheStorage: true,
       indexedDB: true,
@@ -209,26 +223,36 @@ async function clearSiteData(site, tabId) {
 }
 
 async function reloadClean(site, tabId) {
-  const cleanUrl = site.origin + '/';
   if (typeof tabId === 'number') {
     try {
       const tab = await chrome.tabs.get(tabId);
-      if (tab.url?.startsWith(site.origin)) {
-        await chrome.tabs.update(tabId, { url: cleanUrl });
+      if (siteFromUrl(tab.url) === site) {
+        await chrome.tabs.update(tabId, { url: new URL(tab.url).origin + '/' });
         return;
       }
     } catch {
       /* tab may be gone */
     }
   }
-  try {
-    const tabs = await chrome.tabs.query({ url: site.origin + '/*' });
-    if (tabs[0]?.id != null) {
-      await chrome.tabs.update(tabs[0].id, { url: cleanUrl });
+  for (const origin of site.origins) {
+    try {
+      const tabs = await chrome.tabs.query({ url: origin + '/*' });
+      if (tabs[0]?.id != null) {
+        await chrome.tabs.update(tabs[0].id, { url: origin + '/' });
+        return;
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
+}
+
+function samePatterns(a, b) {
+  const left = [...new Set(a || [])];
+  const right = [...new Set(b || [])];
+  return (
+    left.length === right.length && left.every((item) => right.includes(item))
+  );
 }
 
 async function syncRegistrations(enabled) {
@@ -242,8 +266,23 @@ async function syncRegistrations(enabled) {
     });
     return;
   }
-  const have = new Set(existing.map((item) => item.id));
-  const missing = REGISTRATIONS.filter((item) => !have.has(item.id));
+  const byId = new Map(existing.map((item) => [item.id, item]));
+  const stale = REGISTRATIONS.filter((item) => {
+    const current = byId.get(item.id);
+    if (!current) return false;
+    return (
+      !samePatterns(current.matches, item.matches) ||
+      !samePatterns(current.js, item.js)
+    );
+  });
+  if (stale.length) {
+    await chrome.scripting.unregisterContentScripts({
+      ids: stale.map((item) => item.id),
+    });
+  }
+  const missing = REGISTRATIONS.filter(
+    (item) => !byId.has(item.id) || stale.includes(item)
+  );
   if (missing.length) {
     try {
       await chrome.scripting.registerContentScripts(missing);
@@ -257,15 +296,9 @@ async function ensureCompanionSites() {
   const existing = await chrome.scripting.getRegisteredContentScripts({
     ids: REGISTRATION_IDS,
   });
-  const have = new Set(existing.map((item) => item.id));
-  if (!have.has(registration.id) && !have.has(stitchRegistration.id)) return;
-  const missing = REGISTRATIONS.filter((item) => !have.has(item.id));
-  if (!missing.length) return;
-  try {
-    await chrome.scripting.registerContentScripts(missing);
-  } catch (err) {
-    if (!/duplicate/i.test(errText(err))) throw err;
-  }
+  const enabled = existing.some((item) => REGISTRATION_IDS.includes(item.id));
+  if (!enabled) return;
+  await syncRegistrations(true);
 }
 
 async function fetchSpec() {

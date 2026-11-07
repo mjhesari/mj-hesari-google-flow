@@ -4,7 +4,8 @@
   const SPEC_MSG = 'cfc-flow-spec';
   const SPEC_REQ = 'cfc-flow-spec-request';
   const ACCESS_DENIED_MSG = 'cfc-flow-access-denied';
-  const IS_STITCH = location.hostname === 'stitch.withgoogle.com';
+  const STITCH_HOSTS = ['stitch.withgoogle.com', 'stitch.google.com'];
+  const IS_STITCH = STITCH_HOSTS.includes(location.hostname);
 
   let cached;
 

@@ -2,12 +2,14 @@ const SITES = {
     flow: {
       id: 'flow',
       origin: 'https://flow.google.com',
+      hosts: ['flow.google.com'],
       reloadLabel: 'بارگذاری دوباره گوگل فلو',
       clearLabel: 'بازنشانی کامل Flow',
     },
     stitch: {
       id: 'stitch',
       origin: 'https://stitch.withgoogle.com',
+      hosts: ['stitch.withgoogle.com', 'stitch.google.com'],
       reloadLabel: 'بارگذاری دوباره گوگل استیچ',
       clearLabel: 'بازنشانی کامل Stitch',
     },
@@ -78,9 +80,20 @@ const toggle = document.getElementById('toggle'),
 
 let tab;
 
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 function siteFromUrl(url) {
-  if (url?.startsWith(SITES.stitch.origin)) return SITES.stitch;
-  if (url?.startsWith(SITES.flow.origin)) return SITES.flow;
+  const host = hostnameOf(url);
+  if (!host) return null;
+  for (const site of Object.values(SITES)) {
+    if (site.hosts.includes(host)) return site;
+  }
   return null;
 }
 
@@ -189,11 +202,13 @@ clearCookies.onclick = async () => {
   clearCookies.disabled = true;
   error.textContent = '';
   try {
-    const site = siteFromUrl(tab?.url) || SITES.flow;
+    const current = siteFromUrl(tab?.url);
+    const site = current || SITES.flow;
+    const onSite = current === site;
     const result = await chrome.runtime.sendMessage({
       type: 'clearFlowSiteData',
       site: site.id,
-      tabId: tab?.url?.startsWith(site.origin) ? tab.id : undefined,
+      tabId: onSite ? tab.id : undefined,
     });
     if (result == null) {
       throw new Error(
@@ -204,7 +219,7 @@ clearCookies.onclick = async () => {
       throw new Error(result.error || MSG_CLEAR_FAILED);
     }
     setStatus('cookiesCleared');
-    if (!tab?.url?.startsWith(site.origin)) {
+    if (!onSite) {
       await chrome.tabs.create({ url: site.origin + '/' });
     }
     window.close();
