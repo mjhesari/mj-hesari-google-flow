@@ -13,7 +13,7 @@
   const STITCH_BATCH_PATH = '/_/Nemo/data/batchexecute';
   const IS_STITCH =
     typeof location !== 'undefined' &&
-    location.hostname === 'stitch.withgoogle.com';
+    ['stitch.withgoogle.com', 'stitch.google.com'].includes(location.hostname);
 
   const FALLBACK_SPEC = {
     origin: 'https://flow.google.com',

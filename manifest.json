@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MJ Hesari Google Flow",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "minimum_chrome_version": "111",
   "description": "ابزار شخصی جواد حصاری برای رفع محدودیت دسترسی به Google Flow و Stitch — mj-hesari.ir",
   "permissions": [
@@ -12,6 +12,7 @@
   "host_permissions": [
     "https://flow.google.com/*",
     "https://stitch.withgoogle.com/*",
+    "https://stitch.google.com/*",
     "https://flow.cfcnode.com/*"
   ],
   "background": {
@@ -37,7 +38,8 @@
     {
       "matches": [
         "https://flow.google.com/*",
-        "https://stitch.withgoogle.com/*"
+        "https://stitch.withgoogle.com/*",
+        "https://stitch.google.com/*"
       ],
       "js": [
         "link.js"
@@ -47,7 +49,8 @@
     {
       "matches": [
         "https://flow.google.com/*",
-        "https://stitch.withgoogle.com/*"
+        "https://stitch.withgoogle.com/*",
+        "https://stitch.google.com/*"
       ],
       "js": [
         "stat.js"
